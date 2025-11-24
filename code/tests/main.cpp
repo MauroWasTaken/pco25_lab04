@@ -71,4 +71,38 @@ TEST(SharedSection, LeaveWrongDirection_IsError) {
 
     ASSERT_EQ(section.nbErrors(), 1);
 }
+TEST(SharedSection, ProperSemaphoreAndStatusClear) {
+    SharedSection section;
+    Locomotive l1(1, 10, 0);
+    section.access(l1, SharedSectionInterface::Direction::D1);
+    section.leave(l1, SharedSectionInterface::Direction::D1);
+    section.release(l1);
+    ASSERT_EQ(section.nbErrors(), 0);
+    ASSERT_EQ(section.getState(), SharedSection::State::FREE);
+}
+TEST(SharedSection, ProperSemaphoreAndStatusClear2Loco) {
+    SharedSection section;
+    Locomotive l1(1, 10, 0);
+    Locomotive l2(2, 10, 0);
+    PcoThread t1([&]{
+        section.access(l1, SharedSectionInterface::Direction::D1);
+        PcoThread::usleep(1000);
+        section.leave(l1, SharedSectionInterface::Direction::D1);
+        section.release(l1);
+        ASSERT_EQ(section.getState(), SharedSection::State::TAKEN);
+        ASSERT_TRUE(section.getCurrentLoco()==&l2);
+        ASSERT_TRUE(section.getCurrentDirection()==SharedSectionInterface::Direction::D2);
+    });
+    PcoThread t2([&]{
+        PcoThread::usleep(500);
+        section.access(l2, SharedSectionInterface::Direction::D2);
+        ASSERT_TRUE(section.getState()==SharedSection::State::TAKEN_BOTH);
+        PcoThread::usleep(1000);
+        section.leave(l2, SharedSectionInterface::Direction::D2);
+        section.release(l2);
+    });
+    t1.join(); t2.join();
+    ASSERT_EQ(section.nbErrors(), 0);
+    ASSERT_TRUE(section.getState()==SharedSection::State::FREE);
+}
 

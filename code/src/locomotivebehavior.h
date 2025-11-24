@@ -33,6 +33,8 @@ public:
 
 
 protected:
+    static bool isFirstLocoSet;
+    static Locomotive* firstLoco;
     /*!
      * \brief run Fonction lancée par le thread, représente le comportement de la locomotive
      */

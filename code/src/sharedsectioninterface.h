@@ -74,6 +74,8 @@ public:
      */
     [[nodiscard]]
     virtual int nbErrors() = 0;
+
+    void access(int _cpp_par_);
 };
 
 #endif // SHAREDSECTIONINTERFACE_H

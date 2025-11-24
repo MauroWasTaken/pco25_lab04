@@ -36,13 +36,13 @@
 class SharedSection final : public SharedSectionInterface
 {
 public:
-
+    enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
+    enum class State { FREE, TAKEN, WAITING_D1, WAITING_D2, TAKEN_BOTH};
     /**
      * @brief SharedSection Constructeur de la classe qui représente la section partagée.
      * Initialisez vos éventuels attributs ici, sémaphores etc.
      */
-    SharedSection() : semaphore{1}, mutex{1}{
-        // TODO
+    SharedSection() : semaphore{1}, mutex{1}, state{State::FREE} {
     }
 
     /**
@@ -51,25 +51,35 @@ public:
      * @param Direction of the locomotive
      */
     void access(Locomotive& loco, Direction d) override {
-        // TODO
         if (&loco == currentLoco || &loco == waitingLoco) {
             errors++;
             return;
         }
         loco.arreter();
+        bool willBlock = true;
         mutex.acquire();
         if (state == State::FREE) {
             state = State::TAKEN;
             currentLoco = &loco;
             currentDirection = d;
+            nextFunction = ExpectedFunction::LEAVE;
         } else if (state == State::TAKEN) {
-            state = (d == Direction::D1) ? State::WAITING_D1 : State::WAITING_D2;
             waitingLoco = &loco;
             waitingDirection = d;
+            if (d != currentDirection) {
+                state = State::TAKEN_BOTH;
+                willBlock = false;
+                nextFunction = ExpectedFunction::ANY;
+            }else {
+                state = (d == Direction::D1) ? State::WAITING_D1 : State::WAITING_D2;
+                nextFunction = ExpectedFunction::LEAVE;
+            }
+
         }
-        nextFunction = ExpectedFunction::LEAVE;
         mutex.release();
-        semaphore.acquire();
+        if (willBlock) {
+            semaphore.acquire();
+        }
         loco.demarrer();
     }
 
@@ -79,7 +89,6 @@ public:
      * @param Direction of the locomotive
      */
     void leave(Locomotive& loco, Direction d) override {
-        // TODO
         mutex.acquire();
         if (nextFunction != ExpectedFunction::LEAVE && nextFunction != ExpectedFunction::ANY) {
             errors++;
@@ -95,8 +104,12 @@ public:
             state = State::TAKEN_BOTH;
             nextFunction = ExpectedFunction::ANY;
         } else {
-            if ( currentLoco != &loco ){ errors++;}
-            else if (currentLoco == &loco && currentDirection != d) {errors++;}
+            if (state == State::TAKEN_BOTH) {
+                if ( waitingLoco != &loco && currentLoco != &loco ) { errors++; }
+            } else {
+                if ( currentLoco != &loco ){ errors++;}
+                else if (currentLoco == &loco && currentDirection != d) {errors++;}
+            }
         }
         mutex.release();
     }
@@ -106,10 +119,9 @@ public:
      * @param Locomotive who sent the notification
      */
     void release(Locomotive &loco) override {
-        // TODO
         mutex.acquire();
 
-        if ( waitingLoco != &loco && currentLoco != &loco ){ errors++; return;}
+        if ( waitingLoco != &loco && currentLoco != &loco ){ errors++; mutex.release(); return;}
         if (nextFunction != ExpectedFunction::RELEASE && nextFunction != ExpectedFunction::ANY) {
             errors++;
         }
@@ -121,6 +133,8 @@ public:
             case State::TAKEN_BOTH:
                 state = State::TAKEN;
                 currentLoco = waitingLoco;
+                waitingLoco = nullptr;
+                currentDirection = waitingDirection;
                 nextFunction = ExpectedFunction::LEAVE;
                 break;
             case State::TAKEN:
@@ -139,10 +153,11 @@ public:
      * @brief Stop all locomotives to access this shared section
      */
     void stopAll() override {
-        // TODO
         mutex.acquire();
-        if (state == State::FREE)
+        if (state == State::FREE) {
             semaphore.acquire();
+        }
+
         stopped = true;
         mutex.release();
     }
@@ -152,8 +167,23 @@ public:
      * @return nbErrors
      */
     int nbErrors() override {
-        // TODO
         return errors;
+    }
+    //getters for easier testing
+    Locomotive* getCurrentLoco() const {
+        return currentLoco;
+    }
+    Locomotive* getWaitingLoco() const {
+        return waitingLoco;
+    }
+    Direction getCurrentDirection() const {
+        return currentDirection;
+    }
+    Direction getWaitingDirection() const {
+        return waitingDirection;
+    }
+    State getState() const {
+        return state;
     }
 
 private:
@@ -169,9 +199,7 @@ private:
     PcoSemaphore semaphore;
     PcoSemaphore mutex;
     bool stopped = false;
-    enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
     ExpectedFunction nextFunction = ExpectedFunction::ACCESS;
-    enum class State { FREE, TAKEN, WAITING_D1, WAITING_D2, TAKEN_BOTH};
     State state = State::FREE;
 };
 
