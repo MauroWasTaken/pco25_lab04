@@ -1,11 +1,11 @@
-//  /$$$$$$$   /$$$$$$   /$$$$$$         /$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$$ 
-// | $$__  $$ /$$__  $$ /$$__  $$       /$$__  $$ /$$$_  $$ /$$__  $$| $$____/ 
-// | $$  \ $$| $$  \__/| $$  \ $$      |__/  \ $$| $$$$\ $$|__/  \ $$| $$      
-// | $$$$$$$/| $$      | $$  | $$        /$$$$$$/| $$ $$ $$  /$$$$$$/| $$$$$$$ 
+//  /$$$$$$$   /$$$$$$   /$$$$$$         /$$$$$$   /$$$$$$   /$$$$$$  /$$$$$$$
+// | $$__  $$ /$$__  $$ /$$__  $$       /$$__  $$ /$$$_  $$ /$$__  $$| $$____/
+// | $$  \ $$| $$  \__/| $$  \ $$      |__/  \ $$| $$$$\ $$|__/  \ $$| $$
+// | $$$$$$$/| $$      | $$  | $$        /$$$$$$/| $$ $$ $$  /$$$$$$/| $$$$$$$
 // | $$____/ | $$      | $$  | $$       /$$____/ | $$\ $$$$ /$$____/ |_____  $$
 // | $$      | $$    $$| $$  | $$      | $$      | $$ \ $$$| $$       /$$  \ $$
 // | $$      |  $$$$$$/|  $$$$$$/      | $$$$$$$$|  $$$$$$/| $$$$$$$$|  $$$$$$/
-// |__/       \______/  \______/       |________/ \______/ |________/ \______/ 
+// |__/       \______/  \______/       |________/ \______/ |________/ \______/
 
 
 #ifndef SHAREDSECTION_H
@@ -37,12 +37,12 @@ class SharedSection final : public SharedSectionInterface
 {
 public:
     enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
-    enum class State { FREE, TAKEN, WAITING_D1, WAITING_D2, TAKEN_BOTH};
+    enum class State { FREE, TAKEN, WAITING_SAME_D, WAITING_DIFFERENT_D};
     /**
      * @brief SharedSection Constructeur de la classe qui représente la section partagée.
      * Initialisez vos éventuels attributs ici, sémaphores etc.
      */
-    SharedSection() : semaphore{1}, mutex{1}, state{State::FREE} {
+    SharedSection() : semaphore{0}, mutex{1}, state{State::FREE} {
     }
 
     /**
@@ -51,11 +51,7 @@ public:
      * @param Direction of the locomotive
      */
     void access(Locomotive& loco, Direction d) override {
-        if (&loco == currentLoco || &loco == waitingLoco) {
-            errors++;
-            return;
-        }
-        loco.arreter();
+        if (&loco == currentLoco || &loco == waitingLoco) {errors++;return;}
         bool willBlock = true;
         mutex.acquire();
         if (state == State::FREE) {
@@ -63,24 +59,34 @@ public:
             currentLoco = &loco;
             currentDirection = d;
             nextFunction = ExpectedFunction::LEAVE;
+            willBlock = false;
         } else if (state == State::TAKEN) {
             waitingLoco = &loco;
             waitingDirection = d;
             if (d != currentDirection) {
-                state = State::TAKEN_BOTH;
-                willBlock = false;
-                nextFunction = ExpectedFunction::ANY;
+                state = State::WAITING_DIFFERENT_D;
             }else {
-                state = (d == Direction::D1) ? State::WAITING_D1 : State::WAITING_D2;
-                nextFunction = ExpectedFunction::LEAVE;
+                state = State::WAITING_SAME_D;
+                if (nextFunction == ExpectedFunction::RELEASE) {
+                    willBlock = false;
+                }
             }
+            nextFunction = ExpectedFunction::LEAVE;
 
         }
         mutex.release();
         if (willBlock) {
+            loco.arreter();
             semaphore.acquire();
+            mutex.acquire();
+            state = State::TAKEN;
+            currentLoco = &loco;
+            currentDirection = d;
+            waitingLoco = nullptr;
+            nextFunction = ExpectedFunction::LEAVE;
+            mutex.release();
+            loco.demarrer();
         }
-        loco.demarrer();
     }
 
     /**
@@ -90,26 +96,21 @@ public:
      */
     void leave(Locomotive& loco, Direction d) override {
         mutex.acquire();
+        if(currentLoco == &loco && currentDirection != d) {errors++;mutex.release();return;}
         if (nextFunction != ExpectedFunction::LEAVE && nextFunction != ExpectedFunction::ANY) {
             errors++;
         }
         nextFunction = ExpectedFunction::RELEASE;
-        if ((d == Direction::D1 && state == State::WAITING_D2) ||
-            (d == Direction::D2 && state == State::WAITING_D1)) {
-            if ( waitingLoco != &loco && currentLoco != &loco ){ errors++;}
-            else if (waitingLoco == &loco && waitingDirection != d) {errors++;}
-            else if (currentLoco == &loco && currentDirection != d) {errors++;}
-
-            semaphore.release();
-            state = State::TAKEN_BOTH;
+        if (state == State::WAITING_SAME_D) {
+            if ( waitingLoco != &loco && currentLoco != &loco ) { errors++; }
+            if (currentLoco == &loco && currentDirection == d) {semaphore.release();}
+            else if (waitingLoco == &loco && waitingDirection != d) {errors++; mutex.release();return;}
             nextFunction = ExpectedFunction::ANY;
-        } else {
-            if (state == State::TAKEN_BOTH) {
-                if ( waitingLoco != &loco && currentLoco != &loco ) { errors++; }
-            } else {
-                if ( currentLoco != &loco ){ errors++;}
-                else if (currentLoco == &loco && currentDirection != d) {errors++;}
-            }
+        } else if (state == State::WAITING_DIFFERENT_D) {
+            if (&loco == waitingLoco){errors++; mutex.release();return;}
+            if ( currentLoco != &loco ) { errors++; mutex.release();return;}
+            if (currentDirection != d) {errors++; mutex.release();return;}
+            //semaphore will be released when the first loco calls release
         }
         mutex.release();
     }
@@ -127,15 +128,21 @@ public:
         }
 
         switch (state) {
-            case State::WAITING_D1:
-            case State::WAITING_D2:
-                semaphore.release();
-            case State::TAKEN_BOTH:
+            case State::WAITING_DIFFERENT_D:
                 state = State::TAKEN;
                 currentLoco = waitingLoco;
-                waitingLoco = nullptr;
                 currentDirection = waitingDirection;
-                nextFunction = ExpectedFunction::LEAVE;
+                waitingLoco = nullptr;
+                nextFunction = ExpectedFunction::ACCESS;
+                semaphore.release();
+                break;
+            case State::WAITING_SAME_D:
+                state = State::TAKEN;
+                currentLoco = waitingLoco;
+                currentDirection = waitingDirection;
+                waitingLoco = nullptr;
+                nextFunction = ExpectedFunction::ANY;
+                semaphore.release();
                 break;
             case State::TAKEN:
                 state = State::FREE;
