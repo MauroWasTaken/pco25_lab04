@@ -27,7 +27,7 @@ void LocomotiveBehavior::run()
         // Pertinent de faire ça dans les deux threads? Pas sûr...
 
 
-        if (loco.numero() == 7) {
+        if (&locoA == &loco) {
             attendre_contact(1);
             SharedSectionInterface::Direction direction = loco.vitesse() > 0 ? SharedSectionInterface::Direction::D1 : SharedSectionInterface::Direction::D2;
             sharedSection->access(loco,direction);
@@ -35,7 +35,7 @@ void LocomotiveBehavior::run()
             sharedSection->leave(loco,direction);
             sharedSection->release(loco);
             diriger_aiguillage(22, DEVIE, 0);
-        }else {
+        } else {
             attendre_contact(1);
             SharedSectionInterface::Direction direction = loco.vitesse() > 0 ? SharedSectionInterface::Direction::D1 : SharedSectionInterface::Direction::D2;
             sharedSection->access(loco,direction);
