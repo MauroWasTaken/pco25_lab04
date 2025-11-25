@@ -35,8 +35,11 @@
  */
 class SharedSection final : public SharedSectionInterface {
 public:
+
+    // fonction que l'on attend a la prochaine fonction
     enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
 
+    // état des trains
     enum class State { FREE, TAKEN, WAITING_SAME_D, WAITING_DIFFERENT_D, CLOSED};
 
     /**
@@ -52,10 +55,10 @@ public:
      * @param Direction of the locomotive
      */
     void access(Locomotive &loco, Direction d) override {
-        mutex.acquire();
-        if (state == State::CLOSED) {
+        mutex.acquire(); // on acquire le mutex afin de proteger la section critique
+        if (state == State::CLOSED) { // si la section est fermée, on release le mutex
             mutex.release();
-            semaphore.acquire();
+            semaphore.acquire(); // on demande l'accès au trançon
             mutex.acquire();
         }
         if (&loco == currentLoco || &loco == waitingLoco) { //verification d'erreurs
@@ -84,7 +87,7 @@ public:
             }
         }
         mutex.release();
-        if (willBlock) {
+        if (willBlock) { // si cela bloque, on se met en attente de l'autre train.
             loco.arreter();
             semaphore.acquire();    //attente du release ou leave
             mutex.acquire();
@@ -125,11 +128,15 @@ public:
             errors++; //erreur d'ordre mais on continue le programme
         }
         nextFunction = ExpectedFunction::RELEASE;
+
+        // Cas meme direction
         if (state == State::WAITING_SAME_D) {
             if (currentLoco == &loco && currentDirection == d) {
                 semaphore.release();
             }
             nextFunction = ExpectedFunction::ANY;// any car on ne sais pas quelle loco arrivera à un point en premier
+
+            // cas différente direction
         } else if (state == State::WAITING_DIFFERENT_D) {
             // encore plus de verification d'erreurs
             if (&loco == waitingLoco) {
@@ -220,11 +227,17 @@ private:
      * pour implémenter la section partagée.
      */
     int errors = 0;
+    // pointeur sur la première loco initialisée. On l'utilise pour savoir quelle thread est quelle loco
     Locomotive *currentLoco = nullptr;
+
+    //pointeur sur la locomotive qui est entrain d'attendre
     Locomotive *waitingLoco = nullptr;
     Direction currentDirection;
     Direction waitingDirection;
+
+    // le semaphore "semaphore" qui va gerer les threads des trains
     PcoSemaphore semaphore;
+    // Semaphore "mutex" permettant de gerer les accès aux variables donc au section critique
     PcoSemaphore mutex;
     bool stopped = false;
     ExpectedFunction nextFunction = ExpectedFunction::ACCESS;

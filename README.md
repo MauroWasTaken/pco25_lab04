@@ -1,10 +1,77 @@
 # pco25_lab04
-## Section critique 
+
+`Autheur` Mauros Santos, Gabriel Bader
+
+# Objectif
+
+Ce labo à pour objectif de gérer une simulation de 2 locomotive et surtout de gérer une "sharedSection" ou l'on va devoir implémenter des sémaphores et des mutex.
+
+# Justification des choix de conception
+
+On aimerait introduire les deux éléments principaux de ce labo :
+
+``` c++
+ // le semaphore "semaphore" qui va gerer les threads des trains 
+ // et par exemple la "file d'attente" lors de la section partagée
+ PcoSemaphore semaphore;
+ // Semaphore "mutex" permettant de gerer les accès aux variables donc aux sections critiques
+ PcoSemaphore mutex;
+```
+
+On va voir exactement comment sont utilisé ces sémaphore mais en règle général, lors de l'approche de la section partagée, on va prévoir et définir les comportement des trains ainsi que les priorités. En gérant aussi les accès critique.
+
+
+Et l'introduction aussi à :
+
+- Les aiguillages, qui nous permettent de :
+  - Modifier le trajet de nos trains
+- Les points de contact, qui nous permettent de:
+  - Savoir lorsqu'une locomotive arrive a un point X
+  - De faire une action lorsque la locomotive arrive
+  - Et donc de gérer la section partagée.
+
+## Les données partagées
+
+### Sempahore Mutex
+Concrétement, le mutex protège les variables partagées suivantes :
+
+- state (état de la section partagée),
+- currentLoco et waitingLoco (pointeurs vers la locomotive actuellement dans la section et celle qui attend)
+- currentDirection et waitingDirection (directions associées)
+- nextFunction (état attendu de la machine à états) 
+- errors (compteur d’erreurs). 
+
+En s’assurant qu’un seul thread à la fois peut entrer dans ces sections critiques via mutex.acquire() / mutex.release()
+Et donc un seul et unique thread peut modifier ces variables.
+
+### Semaphore semaphore
+Concrétement, le sémaphore sémaphore comme dit avant, va bloquer/débloquer les threads qui sont en attente par rapport à la section partagée
+
+On va donc utiliser comme "signal" les points de contacts afin de savoir dans quel cas nous sommes par rapport à nos deux trains.
+
+Exemple : Lorsque le train A est dans la section partagée, le train B va aquire le sémaphore et donc attendre jusqu'à que le train A soit sorti.
+On va voir après spécifiquement le code pour expliquer les différents cas (différent sens, etc..) d'utilisations de ce sémaphore.
+
+La section SharedSection.h va détailler l'implémentation complète de ce sémaphore.
+
+
+## SharedSection.h
+
+Ce fichier défini notre logique de notre sharedSection. On va voir comment chaque fonction à été implémentée.
+
 Comme demandé dans l'énoncé, nous avons implementé les fonctions access, leave, release en prennant en compte le fait que celle si sera utilisée par 2 trains seulement.
 
-Globalement, l'access à la section critique est protegée par le semaphore mutex(qui protege l'access aux differentes variables) et le semaphore semaphore qui va bloquer les threads(locomotives) qui attendent leur tour.
+Pour nous aider à manager cette section, nous avons mis en place 2 enum class pour gérer les différent états des trains ainsi que les actions :
 
-Nous avons mis en place 2 enum class pour 
+```c++
+    // fonction que l'on attend a la prochaine fonction
+    enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
+
+    // état des trains
+    enum class State { FREE, TAKEN, WAITING_SAME_D, WAITING_DIFFERENT_D, CLOSED};
+```
+
+
 
 ### Methode access
 ```c++
@@ -163,7 +230,8 @@ Nous allons passer dans un switch case en fonction de l'etat actuel:
 - cas ou il y a pas de locomotive qui attend
   - on libere la ligne
 ### Methode stopall
-celle a comme but de bloquer toutes les locomotives qui essayent d'accéder la section critique
+
+Cette fonction a comme but de bloquer toutes les locomotives qui essayent d'accéder la section critique
 ```c++
 void stopAll() override {
         mutex.acquire();
@@ -210,9 +278,9 @@ nous avons commencé par modeliser les differentes informations dites précédem
     int incrementor = 1;        //variable avec laquelle on va affecter index (positif pour d1 negatif pour d2)
     SharedSectionInterface::Direction dir = SharedSectionInterface::Direction::D1; // D1 pour sens de la montre 
 ```
-Dans la methode run nous allons du coup déclarer quelques varibales pour nous aider avec les differents threads
+Dans la methode run nous allons du coup déclarer quelques variables pour nous aider avec les differents threads
 
-La boucle infinie est divisée en deux parties, une pour chaque loc nous permettant de gérer les differentes particularitées de fonctionnement entre les deux.
+La boucle infinie est divisée en deux parties, une pour chaque locomotive nous permettant de gérer les differentes particularitées de fonctionnement entre les deux.
 
 ```c++
   if (&locoA == &loco) {
@@ -235,11 +303,11 @@ La boucle infinie est divisée en deux parties, une pour chaque loc nous permett
   }
 ```
 Le bloc pour la locomotive rouge est plutot simple, il ya les verifications suivantes:
-- si le contacte est l'entrée de la section critique
+- si le contacte est l'entrée de la section partagée
   - on fait access
 - si c'est la fin de la zone partagée
   - on fait leave
-- si c'est la fin de la section critique
+- si c'est la fin de la section partagée
   - on fait release
 - si on est sur le contacte 22 (celui avant l'aiguillage)
   - on dirige l'aguillage 16 en mode dévié
@@ -291,3 +359,13 @@ apres ces verifications, on va ensuite incrémenter index en faisant un modulo p
 Le bloc bleu suit la meme logique que le bloc rouge mais en prennant en compte le fait qu'il puisse aller dans le sens contraire
 
 Nous avons du coup 2 vérifications supplémentaires pour l'inversion de sens suivis par un changement de la variable dir et increment
+
+# Section test
+
+Nous avons ajouté 3 tests supplémentaires.
+
+- Une locomotive fonctionnel qui arrive dans la section partagée
+- 2 locomotive fonctionnel qui vont dans le même sens dans la section partagée
+- 2 locomotive fonctionnel qui ne vont pas dans le même sens dans la section partagée
+
+Les 3 tests supplémentaire ainsi que ceux de base fonctionnent correctement. On est aussi satisfait de notre simulation qui montre bien que tout les cas possibles que nous avons pensé fonctionne correctement. 

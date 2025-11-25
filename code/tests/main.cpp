@@ -71,6 +71,8 @@ TEST(SharedSection, LeaveWrongDirection_IsError) {
 
     ASSERT_EQ(section.nbErrors(), 1);
 }
+
+// Test de une locomotive dans la section partagée
 TEST(SharedSection, ProperSemaphoreAndStatusClear) {
     SharedSection section;
     Locomotive l1(1, 10, 0);
@@ -82,6 +84,8 @@ TEST(SharedSection, ProperSemaphoreAndStatusClear) {
     ASSERT_EQ(section.nbErrors(), 0);
     ASSERT_EQ(section.getState(), SharedSection::State::FREE);
 }
+
+// Test lorsque tout fonctionne et que les deux locomotives ne vont pas dans la meme direction
 TEST(SharedSection, ProperSemaphoreAndStatusDifferentDirections) {
     SharedSection section;
     Locomotive l1(1, 10, 0);
@@ -106,6 +110,8 @@ TEST(SharedSection, ProperSemaphoreAndStatusDifferentDirections) {
     ASSERT_EQ(section.nbErrors(), 0);
     ASSERT_TRUE(section.getState()==SharedSection::State::FREE);
 }
+
+// Test lorsque tout fonctionne et que les deux locomotives vont dans la meme direction
 TEST(SharedSection, ProperSemaphoreAndStatusSameDirections) {
     SharedSection section;
     Locomotive l1(1, 10, 0);

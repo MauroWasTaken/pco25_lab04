@@ -19,40 +19,48 @@
  */
 class LocomotiveBehavior : public Launchable {
 public:
-    /*!
-     * \brief locomotiveBehavior Constructeur de la classe
-     * \param loco la locomotive dont on représente le comportement
+    /*
+     * @brief locomotiveBehavior Constructeur de la classe
+     * @param loco la locomotive dont on représente le comportement
+     *
+     * Note : ajout de locoA, donc le pointeur sur la première loco initialisée.
      */
     LocomotiveBehavior(Locomotive &loco, std::shared_ptr<SharedSectionInterface> sharedSection,
-                       Locomotive &locoA) : loco(loco),
-                                            sharedSection(sharedSection),
-                                            locoA(locoA) {
-        // Eventuel code supplémentaire du constructeur
+                       Locomotive &locoA) : loco(loco), sharedSection(sharedSection),locoA(locoA) {
     }
 
 protected:
+
+    // Declaration de nos routes, on utilise ses constantes afin de determiner les chemins des locomotives
+
+    // variable constante pour les routes par locomotives
     inline static const std::array<int, 10> ROUTEBLUE = {1, 31, 30, 29, 28, 22, 21, 20, 19, 13};
     inline static const std::array<int, 12> ROUTERED = {5, 34, 33, 28, 22, 24, 23, 16, 15, 14, 7, 6};
+
+    // definition de notre section critique par train
     inline static const std::array<int, 2> SECTIONCRITIQUEBLUE = {30, 20};
     inline static const std::array<int, 2> SECTIONCRITIQUERED = {34, 23};
+
+
+    // aiguillage et section
     static const int LEAVESECTIOND1 = 22;
     static const int LEAVESECTIOND2 = 28;
     inline static const std::array<int, 2> SWITCHESBLUE = {1, 13};
     static const int AGUILLAGETRIGGER = 22;
     static const int AGUILLAGE = 16;
 
-    /*!Static data member ROUTEBLUE cannot have an in-class initializer
-     * \brief run Fonction lancée par le thread, représente le comportement de la locomotive
+    /**
+     * @brief run Fonction lancée par le thread, représente le comportement de la locomotive
      */
     void run() override;
 
-    /*!
-     * \brief printStartMessage Message affiché lors du démarrage du thread
+    /**
+     * @brief printStartMessage Message affiché lors du démarrage du thread
      */
     void printStartMessage() override;
 
-    /*!
-     * \brief printCompletionMessage Message affiché lorsque le thread a terminé
+    /**
+     * @brief printCompletionMessage Message affiché lorsque le thread a terminé
      */
     void printCompletionMessage() override;
 
