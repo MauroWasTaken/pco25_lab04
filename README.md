@@ -33,6 +33,7 @@ Et l'introduction aussi à :
 ## Les données partagées
 
 ### Sempahore Mutex
+
 Concrétement, le mutex protège les variables partagées suivantes :
 
 - state (état de la section partagée),
@@ -72,8 +73,8 @@ Pour nous aider à manager cette section, nous avons mis en place 2 enum class p
 ```
 
 
-
 ### Methode access
+
 ```c++
         if (&loco == currentLoco || &loco == waitingLoco) {
             errors++;
@@ -81,7 +82,9 @@ Pour nous aider à manager cette section, nous avons mis en place 2 enum class p
             return;
         }
 ```
+
 identification de cas d'erreur suivi d'une incrementation puis, et release du mutex
+
 ```c++
         bool willBlock = true;
         if (state == State::FREE) { //cas ou section est libre
@@ -104,6 +107,7 @@ identification de cas d'erreur suivi d'une incrementation puis, et release du mu
             }
         }
 ```
+
 Ici nous alons identifier les differents cas possibles:
 - La section est libre
   - la locomotive s'arrete pas
@@ -113,6 +117,7 @@ Ici nous alons identifier les differents cas possibles:
     - sinon la locomotive va attendre jusqu'à ce que leave soit appelé
 - La section est prise et la locomotive va dans le mauvais sens
   - La locomotive va attendre jusqu'a ce que release soit appelé 
+
 ```c++
     if (willBlock) {
         loco.arreter();
@@ -127,11 +132,13 @@ Ici nous alons identifier les differents cas possibles:
         mutex.release();
     }
   ```
+
 Dans ce bloc nous allons bloquer la locomotive si elle se trouve dans un des cas cités avant.
 
 On va ensuite attendre que le semaphore soit released pour ensuite reprendre la main sur la section
 
 ### Methode leave
+
 ```c++
     if (waitingLoco != &loco && currentLoco != &loco) {
         errors++;
@@ -152,6 +159,7 @@ On va ensuite attendre que le semaphore soit released pour ensuite reprendre la 
         errors++; //erreur d'ordre mais on continue le programme
     }
 ```
+
 la fonction leave comment avec une verification des erreurs suivantes:
 - que la locomotive soit ni celle qui attend ni celle qui est dessus
 - que la direction corresponde pas à celle qui a été donnée dans le access
@@ -198,6 +206,7 @@ Ensuite nous allons gérer les cas ou il y' a une locomotive qui attend:
         errors++;
     }
 ```
+
 Comme dit avant, nous commençons notre methode avec des vérification d'erreurs
 ```c++
     switch (state) {
@@ -222,6 +231,7 @@ Comme dit avant, nous commençons notre methode avec des vérification d'erreurs
             break;
     }
 ```
+
 Nous allons passer dans un switch case en fonction de l'etat actuel:
 - cas ou il y a une locomotive qui attend dans le sens inverse
   - on release le semaphore
@@ -232,6 +242,7 @@ Nous allons passer dans un switch case en fonction de l'etat actuel:
 ### Methode stopall
 
 Cette fonction a comme but de bloquer toutes les locomotives qui essayent d'accéder la section critique
+
 ```c++
 void stopAll() override {
         mutex.acquire();
@@ -239,7 +250,9 @@ void stopAll() override {
         mutex.release();
     }
 ```
+
 pour ceci nous allons juste changer l'état en "CLOSED"
+
 ```c++
   if (state == State::CLOSED) {
       mutex.release();
@@ -250,8 +263,11 @@ pour ceci nous allons juste changer l'état en "CLOSED"
 dans la fonction access nous allons du coup faire un check de l'etat pour ensuite bloquer toutes les locomotives qui appellent cette fonction
 
 ## Mise en place du programme
+
 Dans un premiere temps, nous avons établi les differentes routes pour les deux trains.
+
 ![img.png](img.png)
+
 Nous sommes arrivées a celle-ci:
 - la locomotive rouge qui fait un parcours circulaire 
 - la locomotive bleu fait un parcour lineare, elle change son sens apres avoir atteint les points 13 et 1
@@ -260,6 +276,7 @@ Nous sommes arrivées a celle-ci:
   - Tout-droit si c'est la locomotive bleu qui passe
   - dévié si c'est la locomotive rouge qui passe
 ### LocomotiveBehavior
+
 ```c++
   inline static const std::array<int, 10> ROUTEBLUE = {1, 31, 30, 29, 28, 22, 21, 20, 19, 13};
   inline static const std::array<int, 12> ROUTERED = {5, 34, 33, 28, 22, 24, 23, 16, 15, 14, 7, 6};
@@ -271,6 +288,7 @@ Nous sommes arrivées a celle-ci:
   static const int AGUILLAGETRIGGER = 22;
   static const int AGUILLAGE = 16;
 ```
+
 nous avons commencé par modeliser les differentes informations dites précédement pour quelles puissent etre utilisées par le code qui suit
 
 ```c++
@@ -278,6 +296,7 @@ nous avons commencé par modeliser les differentes informations dites précédem
     int incrementor = 1;        //variable avec laquelle on va affecter index (positif pour d1 negatif pour d2)
     SharedSectionInterface::Direction dir = SharedSectionInterface::Direction::D1; // D1 pour sens de la montre 
 ```
+
 Dans la methode run nous allons du coup déclarer quelques variables pour nous aider avec les differents threads
 
 La boucle infinie est divisée en deux parties, une pour chaque locomotive nous permettant de gérer les differentes particularitées de fonctionnement entre les deux.
@@ -312,6 +331,7 @@ Le bloc pour la locomotive rouge est plutot simple, il ya les verifications suiv
 - si on est sur le contacte 22 (celui avant l'aiguillage)
   - on dirige l'aguillage 16 en mode dévié
 apres ces verifications, on va ensuite incrémenter index en faisant un modulo pour que il depasse pas le nombre de contactes dans la route
+
 ```c++
     // blue
     attendre_contact(ROUTEBLUE[index]);
