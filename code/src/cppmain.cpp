@@ -70,7 +70,7 @@ int cmain()
     diriger_aiguillage(17, TOUT_DROIT, 0);
     diriger_aiguillage(18, TOUT_DROIT, 0);
     diriger_aiguillage(19, TOUT_DROIT, 0);
-    diriger_aiguillage(20, DEVIE     , 0);
+    diriger_aiguillage(20, TOUT_DROIT, 0);
     diriger_aiguillage(21, DEVIE     , 0);
     diriger_aiguillage(22, TOUT_DROIT, 0);
     diriger_aiguillage(23, TOUT_DROIT, 0);

@@ -92,9 +92,7 @@ TEST(SharedSection, ProperSemaphoreAndStatusDifferentDirections) {
         PcoThread::usleep(1000);
         section.leave(l1, SharedSectionInterface::Direction::D1);
         section.release(l1);
-        ASSERT_EQ(section.getState(), SharedSection::State::TAKEN);
-        ASSERT_TRUE(section.getCurrentLoco()==&l2);
-        ASSERT_TRUE(section.getCurrentDirection()==SharedSectionInterface::Direction::D2);
+        ASSERT_TRUE(section.getState()==SharedSection::State::WAITING_DIFFERENT_D);
     });
     PcoThread t2([&]{
         PcoThread::usleep(500);

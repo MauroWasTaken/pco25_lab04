@@ -24,7 +24,7 @@
 #endif
 
 #ifndef USE_FAKE_LOCO
-  #include "ctrain_handler.h"
+#include "ctrain_handler.h"
 #endif
 
 #include "sharedsectioninterface.h"
@@ -33,11 +33,12 @@
  * @brief La classe SharedSection implémente l'interface SharedSectionInterface qui
  * propose les méthodes liées à la section partagée.
  */
-class SharedSection final : public SharedSectionInterface
-{
+class SharedSection final : public SharedSectionInterface {
 public:
     enum class ExpectedFunction { ACCESS, LEAVE, RELEASE, ANY };
-    enum class State { FREE, TAKEN, WAITING_SAME_D, WAITING_DIFFERENT_D};
+
+    enum class State { FREE, TAKEN, WAITING_SAME_D, WAITING_DIFFERENT_D, CLOSED};
+
     /**
      * @brief SharedSection Constructeur de la classe qui représente la section partagée.
      * Initialisez vos éventuels attributs ici, sémaphores etc.
@@ -50,42 +51,50 @@ public:
      * @param Locomotive who asked access
      * @param Direction of the locomotive
      */
-    void access(Locomotive& loco, Direction d) override {
-        if (&loco == currentLoco || &loco == waitingLoco) {errors++;return;}
-        bool willBlock = true;
+    void access(Locomotive &loco, Direction d) override {
         mutex.acquire();
-        if (state == State::FREE) {
+        if (state == State::CLOSED) {
+            mutex.release();
+            semaphore.acquire();
+            mutex.acquire();
+        }
+        if (&loco == currentLoco || &loco == waitingLoco) { //verification d'erreurs
+            errors++;
+            mutex.release();
+            return;
+        }
+        bool willBlock = true;
+        if (state == State::FREE) { //cas ou section est libre
             state = State::TAKEN;
             currentLoco = &loco;
             currentDirection = d;
             nextFunction = ExpectedFunction::LEAVE;
             willBlock = false;
-        } else if (state == State::TAKEN) {
+        } else { //cas ou section n'est pas libre (forcement TAKEN car il y a que 2 loco)
             waitingLoco = &loco;
             waitingDirection = d;
-            if (d != currentDirection) {
+            if (d != currentDirection) { //selection de l'etat en fonction de la direction
                 state = State::WAITING_DIFFERENT_D;
-            }else {
+            } else {
                 state = State::WAITING_SAME_D;
-                if (nextFunction == ExpectedFunction::RELEASE) {
+                if (nextFunction == ExpectedFunction::RELEASE) { //si la loco précédente a deja leave la section on peut s'engager
                     willBlock = false;
+                    nextFunction = ExpectedFunction::ANY;
                 }
             }
-            nextFunction = ExpectedFunction::LEAVE;
-
         }
         mutex.release();
         if (willBlock) {
             loco.arreter();
-            semaphore.acquire();
+            semaphore.acquire();    //attente du release ou leave
             mutex.acquire();
             state = State::TAKEN;
             currentLoco = &loco;
             currentDirection = d;
             waitingLoco = nullptr;
             nextFunction = ExpectedFunction::LEAVE;
-            mutex.release();
             loco.demarrer();
+            mutex.release();
         }
     }
 
@@ -94,22 +103,50 @@ public:
      * @param Locomotive who left
      * @param Direction of the locomotive
      */
-    void leave(Locomotive& loco, Direction d) override {
+    void leave(Locomotive &loco, Direction d) override {
         mutex.acquire();
-        if(currentLoco == &loco && currentDirection != d) {errors++;mutex.release();return;}
-        if (nextFunction != ExpectedFunction::LEAVE && nextFunction != ExpectedFunction::ANY) {
+        //verification d'erreurs
+        if (waitingLoco != &loco && currentLoco != &loco) {
             errors++;
+            mutex.release();
+            return;
+        }
+        if (waitingLoco == &loco && waitingDirection != d) {
+            errors++;
+            mutex.release();
+            return;
+        }
+        if (currentLoco == &loco && currentDirection != d) {
+            errors++;
+            mutex.release();
+            return;
+        }
+        if (nextFunction != ExpectedFunction::LEAVE && nextFunction != ExpectedFunction::ANY) {
+            errors++; //erreur d'ordre mais on continue le programme
         }
         nextFunction = ExpectedFunction::RELEASE;
         if (state == State::WAITING_SAME_D) {
-            if ( waitingLoco != &loco && currentLoco != &loco ) { errors++; }
-            if (currentLoco == &loco && currentDirection == d) {semaphore.release();}
-            else if (waitingLoco == &loco && waitingDirection != d) {errors++; mutex.release();return;}
-            nextFunction = ExpectedFunction::ANY;
+            if (currentLoco == &loco && currentDirection == d) {
+                semaphore.release();
+            }
+            nextFunction = ExpectedFunction::ANY;// any car on ne sais pas quelle loco arrivera à un point en premier
         } else if (state == State::WAITING_DIFFERENT_D) {
-            if (&loco == waitingLoco){errors++; mutex.release();return;}
-            if ( currentLoco != &loco ) { errors++; mutex.release();return;}
-            if (currentDirection != d) {errors++; mutex.release();return;}
+            // encore plus de verification d'erreurs
+            if (&loco == waitingLoco) {
+                errors++;
+                mutex.release();
+                return;
+            }
+            if (currentLoco != &loco) {
+                errors++;
+                mutex.release();
+                return;
+            }
+            if (currentDirection != d) {
+                errors++;
+                mutex.release();
+                return;
+            }
             //semaphore will be released when the first loco calls release
         }
         mutex.release();
@@ -122,18 +159,17 @@ public:
     void release(Locomotive &loco) override {
         mutex.acquire();
 
-        if ( waitingLoco != &loco && currentLoco != &loco ){ errors++; mutex.release(); return;}
+        if (waitingLoco != &loco && currentLoco != &loco) {
+            errors++;
+            mutex.release();
+            return;
+        }
         if (nextFunction != ExpectedFunction::RELEASE && nextFunction != ExpectedFunction::ANY) {
             errors++;
         }
 
         switch (state) {
             case State::WAITING_DIFFERENT_D:
-                state = State::TAKEN;
-                currentLoco = waitingLoco;
-                currentDirection = waitingDirection;
-                waitingLoco = nullptr;
-                nextFunction = ExpectedFunction::ACCESS;
                 semaphore.release();
                 break;
             case State::WAITING_SAME_D:
@@ -142,13 +178,13 @@ public:
                 currentDirection = waitingDirection;
                 waitingLoco = nullptr;
                 nextFunction = ExpectedFunction::ANY;
-                semaphore.release();
                 break;
             case State::TAKEN:
-                state = State::FREE;
-                nextFunction = ExpectedFunction::ACCESS;
-                currentLoco = nullptr;
-                semaphore.release();
+                if (currentLoco == &loco) {
+                    state = State::FREE;
+                    nextFunction = ExpectedFunction::ACCESS;
+                    currentLoco = nullptr;
+                }
                 break;
             default:
                 break;
@@ -161,11 +197,7 @@ public:
      */
     void stopAll() override {
         mutex.acquire();
-        if (state == State::FREE) {
-            semaphore.acquire();
-        }
-
-        stopped = true;
+        state = State::CLOSED;
         mutex.release();
     }
 
@@ -176,20 +208,9 @@ public:
     int nbErrors() override {
         return errors;
     }
-    //getters for easier testing
-    Locomotive* getCurrentLoco() const {
-        return currentLoco;
-    }
-    Locomotive* getWaitingLoco() const {
-        return waitingLoco;
-    }
-    Direction getCurrentDirection() const {
-        return currentDirection;
-    }
-    Direction getWaitingDirection() const {
-        return waitingDirection;
-    }
-    State getState() const {
+
+    //getter for easier testing
+    [[nodiscard]] State getState() const {
         return state;
     }
 
@@ -199,8 +220,8 @@ private:
      * pour implémenter la section partagée.
      */
     int errors = 0;
-    Locomotive* currentLoco = nullptr;
-    Locomotive* waitingLoco = nullptr;
+    Locomotive *currentLoco = nullptr;
+    Locomotive *waitingLoco = nullptr;
     Direction currentDirection;
     Direction waitingDirection;
     PcoSemaphore semaphore;
